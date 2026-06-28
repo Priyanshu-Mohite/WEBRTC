@@ -1,43 +1,75 @@
 const express = require("express");
 const bodyParser = require("body-parser");
+const http = require("http");
 const { Server } = require("socket.io");
 
-const io = new Server({
+const app = express();
+const server = http.createServer(app);
+
+const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    // Deploy hone ke baad isko frontend Render URL se replace karna
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     methods: ["GET", "POST"],
   },
 });
-const app = express();
 
 app.use(bodyParser.json());
 
-const emailtosocketmapping = new Map();
-const socketToEmailmapping = new Map();
+const emailToSocketMapping = new Map();
+const socketToEmailMapping = new Map();
 
 io.on("connection", (socket) => {
-  console.log("New user connected with socket id: ", socket.id);
+  console.log("New user connected:", socket.id);
+
   socket.on("join-room", ({ roomId, email }) => {
-    console.log("User connected with email: ", email);
-    emailtosocketmapping.set(email, socket.id);
-    socketToEmailmapping.set(socket.id, email);
+    console.log(`${email} joined ${roomId}`);
+
+    emailToSocketMapping.set(email, socket.id);
+    socketToEmailMapping.set(socket.id, email);
 
     socket.join(roomId);
+
     socket.emit("joined-room", { roomId });
     socket.broadcast.to(roomId).emit("user-connected", email);
   });
 
   socket.on("call-user", ({ email, offer }) => {
-    const socketId = emailtosocketmapping.get(email);
-    const fromEmail = socketToEmailmapping.get(socket.id);
-    socket.to(socketId).emit("incomming-call", { from: fromEmail, offer });
+    const socketId = emailToSocketMapping.get(email);
+    const from = socketToEmailMapping.get(socket.id);
+
+    if (socketId) {
+      io.to(socketId).emit("incomming-call", {
+        from,
+        offer,
+      });
+    }
   });
 
   socket.on("call-accept", ({ email, answer }) => {
-    const socketId = emailtosocketmapping.get(email);
-    socket.to(socketId).emit("call-accept", { answer });
+    const socketId = emailToSocketMapping.get(email);
+
+    if (socketId) {
+      io.to(socketId).emit("call-accept", {
+        answer,
+      });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    const email = socketToEmailMapping.get(socket.id);
+
+    if (email) {
+      emailToSocketMapping.delete(email);
+      socketToEmailMapping.delete(socket.id);
+    }
+
+    console.log("Disconnected:", socket.id);
   });
 });
 
-app.listen(8000, () => console.log("Http server running at PORT 8000"));
-io.listen(8001);
+const PORT = process.env.PORT || 8000;
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
