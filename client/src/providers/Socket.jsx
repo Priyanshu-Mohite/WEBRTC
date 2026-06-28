@@ -14,7 +14,13 @@ export const useSocket = () => {
 export const SocketProvider = (props) => {
   
   // Sabse important line: useMemo ka logic
-  const socket = useMemo(() => io("localhost:8001"), []);
+  const socket = useMemo(
+    () =>
+      io("https://webrtc-yrzp.onrender.com", {
+        transports: ["websocket"],
+      }),
+    []
+  );
 
   return (
     <SocketContext.Provider value={socket}>
